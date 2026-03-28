@@ -74,4 +74,66 @@ const login = async (req, res) => {
     }
 };
 
-module.exports = { register, login };
+const nodemailer = require('nodemailer');
+
+const sendEmailOTP = async (email, otp) => {
+    // Ép kiểu email về string nếu lỡ truyền nhầm object, 
+    // nhưng tốt nhất là sửa ở nơi gọi hàm (bước 2)
+    console.log("Đang gửi OTP đến địa chỉ:", email); 
+
+    if (!email || typeof email !== 'string') {
+        console.error("LỖI: Email không hợp lệ hoặc bị trống!", email);
+        return;
+    }
+
+    try {
+        let transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS
+            }
+        });
+
+        await transporter.sendMail({
+            from: '"BOCKET Admin" <no-reply@bocket.com>',
+            to: email, // Ở đây phải là một chuỗi 'abc@gmail.com'
+            subject: "Mã xác thực OTP của bạn",
+            text: `Mã OTP của bạn là: ${otp}. Mã có hiệu lực trong 5 phút.`,
+        });
+        
+        console.log("Đã gửi email thành công!");
+    } catch (error) {
+        console.error("Lỗi Nodemailer:", error.message);
+    }
+};
+
+// Giả sử đây là hàm xử lý khi người dùng bấm gửi OTP
+const handleRegister = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ message: "Email là bắt buộc" });
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const pool = await poolPromise;
+
+        // Lưu OTP vào Database (Vô hiệu hóa các mã cũ của email này trước khi lưu mã mới)
+        await pool.request()
+            .input('email', sql.NVarChar, email)
+            .input('otp', sql.Char, otp)
+            .query(`
+                UPDATE OtpCodes SET IsUsed = 1 WHERE Email = @email;
+                INSERT INTO OtpCodes (Email, OtpCode) VALUES (@email, @otp)
+            `);
+
+        // Gọi hàm gửi email đã viết trước đó
+        await sendEmailOTP(email, otp);
+
+        res.status(200).json({ message: "OTP đã được gửi đến email của bạn!" });
+    } catch (error) {
+        console.error("Lỗi handleRegister:", error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+module.exports = { register, login, sendEmailOTP, handleRegister };
