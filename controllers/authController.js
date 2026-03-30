@@ -136,4 +136,37 @@ const handleRegister = async (req, res) => {
     }
 };
 
-module.exports = { register, login, sendEmailOTP, handleRegister };
+const verifyOTP = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+        const pool = await poolPromise;
+
+        // Kiểm tra mã OTP trong 5 phút gần nhất
+        const result = await pool.request()
+            .input('email', sql.NVarChar, email)
+            .input('otp', sql.Char, otp)
+            .query(`
+                SELECT TOP 1 * FROM OtpCodes 
+                WHERE Email = @email 
+                AND OtpCode = @otp 
+                AND IsUsed = 0 
+                AND CreatedAt > DATEADD(MINUTE, -5, GETDATE())
+                ORDER BY CreatedAt DESC
+            `);
+
+        if (result.recordset.length > 0) {
+            // Đánh dấu mã này đã được sử dụng thành công
+            await pool.request()
+                .input('id', sql.Int, result.recordset[0].Id)
+                .query('UPDATE OtpCodes SET IsUsed = 1 WHERE Id = @id');
+
+            res.status(200).json({ message: "Xác thực OTP thành công!" });
+        } else {
+            res.status(400).json({ message: "Mã OTP không đúng hoặc đã hết hạn!" });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+module.exports = { register, login, sendEmailOTP, handleRegister, verifyOTP };
