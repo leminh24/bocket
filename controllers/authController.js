@@ -4,16 +4,27 @@ const jwt = require('jsonwebtoken');
 
 const register = async (req, res) => {
     try {
-        const { username, password, display_name } = req.body;
-        const pool = await poolPromise;
+        let { username, password, display_name, email, avatar } = req.body;
+        
+        // 1. Lấy pool từ promise
+        const pool = await poolPromise; 
 
-        // 2. Kiểm tra user tồn tại
+        // 2. Kiểm tra kết nối
+        if (!pool) {
+            throw new Error("Không thể kết nối đến Database Pool");
+        }
+
+        if (!display_name || display_name.trim() === "") {
+            display_name = username;
+        }
+
+        // 3. (Optional) Kiểm tra email đã tồn tại chưa
         const checkUser = await pool.request()
-            .input('user', sql.NVarChar, username)
-            .query('SELECT * FROM Users WHERE Username = @user');
-
+            .input('emailCheck', sql.NVarChar, email)
+            .query('SELECT Username FROM Users WHERE Email = @emailCheck');
+        
         if (checkUser.recordset.length > 0) {
-            return res.status(400).json({ message: "Username đã tồn tại!" });
+            return res.status(400).json({ message: "Email này đã được sử dụng!" });
         }
 
         // 3. MÃ HÓA MẬT KHẨU (Hashing)
@@ -26,7 +37,10 @@ const register = async (req, res) => {
             .input('user', sql.NVarChar, username)
             .input('pass', sql.NVarChar, hashedPassword) // Lưu hashedPassword thay vì password
             .input('name', sql.NVarChar, display_name)
-            .query('INSERT INTO Users (Username, Password, DisplayName) VALUES (@user, @pass, @name)');
+            .input('email', sql.NVarChar, email)   // Lưu email
+            .input('avatar', sql.NVarChar, avatar) // Lưu đường dẫn ảnh hoặc base64
+            .query(`INSERT INTO Users (Username, Password, DisplayName, Email, AvatarURL) 
+                VALUES (@user, @pass, @name, @email, @avatar)`);
 
         res.status(201).json({ message: "Đăng ký thành công và bảo mật mật khẩu!" });
     } catch (err) {
