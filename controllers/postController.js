@@ -3,7 +3,7 @@ const { poolPromise, sql } = require('../config/db');
 // 1. Lấy tất cả bài đăng (Phân trang)
 const getAllPosts = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 5;
+    const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
 
     const pool = await poolPromise;
@@ -26,10 +26,17 @@ const getAllPosts = async (req, res) => {
 const getFriendPosts = async (req, res) => {
     const { userId } = req.params;
     const pool = await poolPromise;
+    // Sửa lại đoạn query trong Backend của bạn:
     const result = await pool.request()
         .input('myId', sql.Int, userId)
         .query(`
-            SELECT p.PostID, u.DisplayName, p.ImageURL, p.Content, p.CreatedAt
+            SELECT 
+                p.PostID, 
+                u.DisplayName, 
+                u.AvatarURL,  
+                p.ImageURL, 
+                p.Content, 
+                p.CreatedAt
             FROM Posts p
             JOIN Users u ON p.UserID = u.UserID
             WHERE p.UserID IN (
