@@ -1,27 +1,52 @@
 const { poolPromise, sql } = require('../config/db');
-
 const sendFriendRequest = async (req, res) => {
     try {
-        const { friendId } = req.body; // ID người muốn kết bạn
-        const userId = req.user.userId; // ID của mình (từ Token)
+        const { friendId } = req.body;
+        const userId = req.user.userId;
 
-        if (userId == friendId) return res.status(400).json({ message: "Không thể kết bạn với chính mình!" });
+        if (userId == friendId) return res.status(400).json({ message: "Không thể tự kết bạn!" });
 
         const pool = await poolPromise;
-        await pool.request()
-            .input('userId', sql.Int, userId)
-            .input('friendId', sql.Int, friendId)
+        // Kiểm tra xem đã là bạn hoặc đã gửi yêu cầu chưa
+        const check = await pool.request()
+            .input('u', sql.Int, userId)
+            .input('f', sql.Int, friendId)
             .query(`
-                IF NOT EXISTS (SELECT 1 FROM Friends WHERE UserID = @userId AND FriendID = @friendId)
-                INSERT INTO Friends (UserID, FriendID, Status) VALUES (@userId, @friendId, 'Accepted')
-            `); 
-            // Lưu ý: Ở bản đơn giản này, mình cho 'Accepted' luôn. 
-            // Nếu làm chuyên nghiệp thì để 'Pending' và viết thêm hàm Accept.
+                SELECT Status FROM Friends 
+                WHERE (UserID = @u AND FriendID = @f) 
+                OR (UserID = @f AND FriendID = @u)
+            `);
 
-        res.json({ message: "Đã kết bạn thành công!" });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+        if (check.recordset.length > 0) {
+            return res.status(400).json({ message: "Yêu cầu đã tồn tại hoặc đã là bạn bè" });
+        }
+
+        await pool.request()
+            .input('u', sql.Int, userId)
+            .input('f', sql.Int, friendId)
+            .query("INSERT INTO Friends (UserID, FriendID, Status) VALUES (@u, @f, 'Pending')");
+
+        res.json({ message: "Đã gửi lời mời!" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+const getPendingRequests = async (req, res) => {
+    try {
+        const myId = req.user.userId;
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('myId', sql.Int, myId)
+            .query(`
+                SELECT 
+                    u.UserID AS UserID, 
+                    u.DisplayName AS DisplayName, 
+                    u.Username AS Username, 
+                    u.AvatarURL AS avatar  -- ĐỔI AvatarURL THÀNH avatar
+                FROM Users u
+                JOIN Friends f ON u.UserID = f.UserID
+                WHERE f.FriendID = @myId AND f.Status = 'Pending'
+            `);
+        res.json(result.recordset);
+    } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
 const getMyFriends = async (req, res) => {
@@ -34,12 +59,73 @@ const getMyFriends = async (req, res) => {
                 SELECT u.UserID, u.DisplayName, u.AvatarURL 
                 FROM Users u
                 JOIN Friends f ON u.UserID = f.FriendID
-                WHERE f.UserID = @userId
+                WHERE f.UserID = @userId AND f.Status = 'Accepted'
             `);
         res.json(result.recordset);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
+const getUserById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('id', sql.Int, id)
+            .query("SELECT UserID, Username, DisplayName, AvatarURL FROM Users WHERE UserID = @id");
 
-module.exports = { sendFriendRequest, getMyFriends };
+        if (result.recordset.length > 0) {
+            res.json(result.recordset[0]); // Trả về 1 đối tượng duy nhất
+        } else {
+            res.status(404).json({ message: "Không tìm thấy User với ID này" });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+const acceptFriend = async (req, res) => {
+    try {
+        const { requesterId } = req.body; // ID người đã gửi lời mời cho mình
+        const myId = req.user.userId;     // ID của mình (người bấm đồng ý)
+
+        const pool = await poolPromise;
+        // Sửa SQL trong acceptFriend
+        await pool.request()
+            .input('myId', sql.Int, myId)
+            .input('rId', sql.Int, requesterId)
+            .query(`
+                -- Chỉ update nếu thực sự có lời mời đang ở trạng thái Pending
+                UPDATE Friends SET Status = 'Accepted' 
+                WHERE UserID = @rId AND FriendID = @myId AND Status = 'Pending';
+
+                -- Nếu update thành công (@@ROWCOUNT > 0) thì mới chèn dòng ngược lại
+                IF @@ROWCOUNT > 0 AND NOT EXISTS (SELECT 1 FROM Friends WHERE UserID = @myId AND FriendID = @rId)
+                BEGIN
+                    INSERT INTO Friends (UserID, FriendID, Status) VALUES (@myId, @rId, 'Accepted');
+                END
+            `);
+        res.json({ message: "Hai bạn đã trở thành bạn bè!" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+const getSentRequests = async (req, res) => {
+    try {
+        const myId = req.user.userId;
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('myId', sql.Int, myId)
+            .query(`
+                SELECT 
+                    u.UserID AS UserID, 
+                    u.DisplayName AS DisplayName, 
+                    u.Username AS Username, 
+                    u.AvatarURL AS avatar  -- ĐỔI AvatarURL THÀNH avatar
+                FROM Friends f
+                JOIN Users u ON f.FriendID = u.UserID 
+                WHERE f.UserID = @myId AND f.Status = 'Pending'
+            `);
+        res.json(result.recordset);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+
+module.exports = { sendFriendRequest, getMyFriends, getUserById, acceptFriend, getPendingRequests, getSentRequests };

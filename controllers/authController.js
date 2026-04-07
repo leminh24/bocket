@@ -182,5 +182,30 @@ const verifyOTP = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+const getProfile = async (req, res) => {
+    try {
+        // userId này lấy từ middleware verifyToken (req.user.userId)
+        const userId = req.user.userId; 
+        const pool = await poolPromise;
 
-module.exports = { register, login, sendEmailOTP, handleRegister, verifyOTP };
+        const result = await pool.request()
+            .input('id', sql.Int, userId)
+            .query(`
+                SELECT UserID, Username, DisplayName, Email, AvatarURL 
+                FROM Users 
+                WHERE UserID = @id
+            `);
+
+        if (result.recordset.length > 0) {
+            // Trả về Object đầu tiên (rất quan trọng để Android không bị lỗi)
+            res.json(result.recordset[0]); 
+        } else {
+            res.status(404).json({ message: "Không tìm thấy người dùng" });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// Nhớ thêm getProfile vào module.exports ở cuối file
+module.exports = { register, login, sendEmailOTP, handleRegister, verifyOTP, getProfile };
