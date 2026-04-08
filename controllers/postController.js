@@ -22,7 +22,6 @@ const getAllPosts = async (req, res) => {
     res.json({ page, limit, data: result.recordset });
 };
 
-// 2. Lấy bài đăng của bạn bè (Newsfeed - Lịch sử)
 const getFriendPosts = async (req, res) => {
     const myId = req.user.userId; 
 
@@ -40,12 +39,15 @@ const getFriendPosts = async (req, res) => {
             FROM Posts p
             JOIN Users u ON p.UserID = u.UserID
             WHERE p.UserID IN (
-                SELECT FriendID FROM Friends WHERE UserID = @myId
-            ) OR p.UserID = @myId -- Thêm dòng này để thấy cả bài của mình
+                -- Chỉ lấy FriendID nếu trạng thái là 'Accepted'
+                SELECT FriendID 
+                FROM Friends 
+                WHERE UserID = @myId AND Status = 'Accepted' 
+            ) 
+            OR p.UserID = @myId -- Vẫn giữ dòng này để thấy bài của chính mình
             ORDER BY p.CreatedAt DESC
         `);
     
-    // Trả về object có key "data" để đồng bộ với Android
     res.json({ data: result.recordset }); 
 };
 

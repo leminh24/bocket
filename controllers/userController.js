@@ -39,9 +39,10 @@ exports.getUserProfile = async (req, res) => {
 // Hàm cập nhật thông tin cá nhân (DisplayName, Email, Avatar Base64)
 exports.updateProfile = async (req, res) => {
     try {
+
         const pool = await poolPromise;
         const userId = req.user.userId; 
-        const { display_name, email, avatar } = req.body;
+        const { DisplayName, Email, AvatarURL } = req.body;
 
         if (!userId) {
             return res.status(401).json({ message: "Không xác định được người dùng" });
@@ -50,8 +51,8 @@ exports.updateProfile = async (req, res) => {
         const request = pool.request()
             .input('uid', sql.Int, userId)
             // Truyền giá trị null nếu chuỗi rỗng để SQL nhận biết
-            .input('name', sql.NVarChar, (display_name && display_name.trim() !== "") ? display_name : null)
-            .input('mail', sql.NVarChar, (email && email.trim() !== "") ? email : null);
+            .input('name', sql.NVarChar, (DisplayName && DisplayName.trim() !== "") ? DisplayName : null)
+            .input('mail', sql.NVarChar, (Email && Email.trim() !== "") ? Email : null);
 
         /**
          * LOGIC SQL: 
@@ -63,12 +64,12 @@ exports.updateProfile = async (req, res) => {
                 Email = COALESCE(@mail, Email)`;
 
         // Xử lý riêng cho Avatar vì logic cũ của bạn là chỉ Update khi có ảnh mới
-        if (avatar && avatar.trim() !== "") {
-            request.input('avt', sql.NVarChar, avatar);
-            query += `, AvatarURL = @avt`;
+        if (AvatarURL && AvatarURL.trim() !== "") {
+            request.input('avt', sql.NVarChar, AvatarURL);
+            query += ", AvatarURL = @avt";
         }
 
-        query += ` WHERE UserID = @uid`;
+        query += " WHERE UserID = @uid";
 
         await request.query(query);
 
