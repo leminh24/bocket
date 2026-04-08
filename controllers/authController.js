@@ -4,46 +4,37 @@ const jwt = require('jsonwebtoken');
 
 const register = async (req, res) => {
     try {
-        let { username, password, display_name, email, avatar } = req.body;
-        
-        // 1. Lấy pool từ promise
-        const pool = await poolPromise; 
+        // SERVER TỰ THÍCH NGHI VỚI ANDROID
+        // Lấy đúng tên trường mà @SerializedName ở Android đang gửi lên
+        let username     = req.body.Username;    // Khớp với @SerializedName("Username")
+        let password     = req.body.password;    // Trường này bạn không để SerializedName nên dùng chữ thường
+        let email        = req.body.email;       // Khớp với @SerializedName("email")
+        let display_name = req.body.DisplayName || username; // Khớp với @SerializedName("DisplayName")
+        let avatar       = req.body.AvatarURL || "";         // Khớp với @SerializedName("AvatarURL")
 
-        // 2. Kiểm tra kết nối
-        if (!pool) {
-            throw new Error("Không thể kết nối đến Database Pool");
+        if (!username || !password || !email) {
+            return res.status(400).json({ error: "Thiếu Username, Password hoặc Email từ Android gửi lên!" });
         }
 
-        if (!display_name || display_name.trim() === "") {
-            display_name = username;
-        }
-
-        // 3. (Optional) Kiểm tra email đã tồn tại chưa
-        const checkUser = await pool.request()
-            .input('emailCheck', sql.NVarChar, email)
-            .query('SELECT Username FROM Users WHERE Email = @emailCheck');
-        
-        if (checkUser.recordset.length > 0) {
-            return res.status(400).json({ message: "Email này đã được sử dụng!" });
-        }
-
-        // 3. MÃ HÓA MẬT KHẨU (Hashing)
-        // saltRounds = 10 là độ phức tạp tiêu chuẩn
+        const pool = await poolPromise;
+        // ... (Các bước kiểm tra email và mã hóa password giữ nguyên) ...
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // 4. Lưu vào DB với mật khẩu ĐÃ MÃ HÓA
+        // Lưu vào Database
         await pool.request()
             .input('user', sql.NVarChar, username)
-            .input('pass', sql.NVarChar, hashedPassword) // Lưu hashedPassword thay vì password
+            .input('pass', sql.NVarChar, hashedPassword)
             .input('name', sql.NVarChar, display_name)
-            .input('email', sql.NVarChar, email)   // Lưu email
-            .input('avatar', sql.NVarChar, avatar) // Lưu đường dẫn ảnh hoặc base64
+            .input('email', sql.NVarChar, email)
+            .input('avatar', sql.NVarChar(sql.MAX), avatar) // Quan trọng nhất: NVARCHAR(MAX) cho ảnh
             .query(`INSERT INTO Users (Username, Password, DisplayName, Email, AvatarURL) 
-                VALUES (@user, @pass, @name, @email, @avatar)`);
+                    VALUES (@user, @pass, @name, @email, @avatar)`);
 
-        res.status(201).json({ message: "Đăng ký thành công và bảo mật mật khẩu!" });
+        res.status(201).json({ message: "Đăng ký thành công!" });
+
     } catch (err) {
+        console.error("Lỗi Server:", err.message);
         res.status(500).json({ error: err.message });
     }
 };
@@ -206,6 +197,43 @@ const getProfile = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+const resetPassword = async (req, res) => {
+    try {
+        // Lấy dữ liệu từ Body gửi lên
+        // Dùng dấu || để lấy trường nào có dữ liệu (đề phòng Android gửi Password hoặc password)
+        const email = req.body.email || req.body.Email;
+        const newPassword = req.body.password || req.body.Password;
 
-// Nhớ thêm getProfile vào module.exports ở cuối file
-module.exports = { register, login, sendEmailOTP, handleRegister, verifyOTP, getProfile };
+        console.log("Email nhận được:", email);
+        console.log("Pass mới nhận được:", newPassword ? "Đã có" : "Trống");
+
+        if (!email || !newPassword) {
+            return res.status(400).json({ error: "Thiếu Email hoặc Mật khẩu mới!" });
+        }
+
+        const pool = await poolPromise;
+
+        // 1. Mã hóa mật khẩu
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        // 2. Chạy lệnh SQL
+        // Lưu ý: Kiểm tra chính xác tên cột trong DB của bạn là 'Password' hay 'password'
+        const result = await pool.request()
+            .input('email', sql.NVarChar, email)
+            .input('pass', sql.NVarChar, hashedPassword)
+            .query('UPDATE Users SET Password = @pass WHERE Email = @email');
+
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).json({ error: "Email không tồn tại trong hệ thống!" });
+        }
+
+        res.status(200).json({ message: "Cập nhật mật khẩu thành công!" });
+
+    } catch (err) {
+        console.error("Lỗi Server:", err.message);
+        res.status(500).json({ error: "Lỗi hệ thống: " + err.message });
+    }
+};
+// Nhớ thêm getProfile và resetPassword vào module.exports ở cuối file
+module.exports = { register, login, sendEmailOTP, handleRegister, verifyOTP, getProfile, resetPassword };

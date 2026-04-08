@@ -18,6 +18,10 @@ app.use('/api/friends', friendRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/user', userExternalRoutes);
 
+
+// Thêm dòng này TRƯỚC các routes
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // 2. Middleware xử lý lỗi tập trung (PHẢI ĐẶT SAU CÙNG)
 // Sử dụng errorHandler từ file middleware/errorMiddleware.js bạn đã tạo
 app.use(errorHandler); 
@@ -25,4 +29,5 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Server đang chạy tại cổng ${PORT}`);
+    
 });
