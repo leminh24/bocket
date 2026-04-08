@@ -22,13 +22,13 @@ const getAllPosts = async (req, res) => {
     res.json({ page, limit, data: result.recordset });
 };
 
-// 2. Lấy bài đăng của bạn bè
+// 2. Lấy bài đăng của bạn bè (Newsfeed - Lịch sử)
 const getFriendPosts = async (req, res) => {
-    const { userId } = req.params;
+    const myId = req.user.userId; 
+
     const pool = await poolPromise;
-    // Sửa lại đoạn query trong Backend của bạn:
     const result = await pool.request()
-        .input('myId', sql.Int, userId)
+        .input('myId', sql.Int, myId)
         .query(`
             SELECT 
                 p.PostID, 
@@ -41,10 +41,12 @@ const getFriendPosts = async (req, res) => {
             JOIN Users u ON p.UserID = u.UserID
             WHERE p.UserID IN (
                 SELECT FriendID FROM Friends WHERE UserID = @myId
-            )
+            ) OR p.UserID = @myId -- Thêm dòng này để thấy cả bài của mình
             ORDER BY p.CreatedAt DESC
         `);
-    res.json(result.recordset);
+    
+    // Trả về object có key "data" để đồng bộ với Android
+    res.json({ data: result.recordset }); 
 };
 
 // 3. Đăng bài
@@ -68,4 +70,26 @@ const createPost = async (req, res) => {
     res.status(201).json({ message: "Đăng bài thành công!", imageUrl });
 };
 
-module.exports = { getAllPosts, getFriendPosts, createPost };
+// 4. Lấy bài đăng của một người cụ thể
+const getPostsByUser = async (req, res) => {
+    const { userId } = req.params; // Lấy ID người cần xem từ URL
+    const pool = await poolPromise;
+    const result = await pool.request()
+        .input('targetId', sql.Int, userId)
+        .query(`
+            SELECT 
+                p.PostID, 
+                u.DisplayName, 
+                u.AvatarURL,  
+                p.ImageURL, 
+                p.Content, 
+                p.CreatedAt
+            FROM Posts p
+            JOIN Users u ON p.UserID = u.UserID
+            WHERE p.UserID = @targetId
+            ORDER BY p.CreatedAt DESC
+        `);
+    res.json({ data: result.recordset });
+};
+
+module.exports = { getAllPosts, getFriendPosts, createPost, getPostsByUser };

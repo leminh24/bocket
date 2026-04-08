@@ -8,10 +8,13 @@ router.get('/', verifyToken, postController.getAllPosts);
 // Đường dẫn: GET http://localhost:3000/api/posts
 // router.get('/', postController.getAllPosts);
 
-// Đường dẫn: GET http://localhost:3000/api/posts/friends/1
-router.get('/friends/:userId', postController.getFriendPosts);
+router.get('/friends-feed', verifyToken, postController.getFriendPosts);
 
 // API Đăng bài: Kiểm tra Token trước -> Thu nhận ảnh 'image' -> Lưu vào DB
 router.post('/upload', verifyToken, upload.single('image'), postController.createPost);
+
+// Lấy bài đăng của một người cụ thể (Trang cá nhân)
+// URL: GET /api/posts/user/:userId
+router.get('/user/:userId', verifyToken, postController.getPostsByUser);
 
 module.exports = router;
