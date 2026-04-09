@@ -4,30 +4,38 @@ const jwt = require('jsonwebtoken');
 
 const register = async (req, res) => {
     try {
-        // SERVER TỰ THÍCH NGHI VỚI ANDROID
-        // Lấy đúng tên trường mà @SerializedName ở Android đang gửi lên
-        let username     = req.body.Username;    // Khớp với @SerializedName("Username")
-        let password     = req.body.password;    // Trường này bạn không để SerializedName nên dùng chữ thường
-        let email        = req.body.email;       // Khớp với @SerializedName("email")
-        let display_name = req.body.DisplayName || username; // Khớp với @SerializedName("DisplayName")
-        let avatar       = req.body.AvatarURL || "";         // Khớp với @SerializedName("AvatarURL")
+        let username     = req.body.Username;
+        let password     = req.body.password;
+        let email        = req.body.email;
+        let display_name = req.body.DisplayName || username;
+        let avatar       = req.body.AvatarURL || "";
 
         if (!username || !password || !email) {
-            return res.status(400).json({ error: "Thiếu Username, Password hoặc Email từ Android gửi lên!" });
+            return res.status(400).json({ error: "Thiếu thông tin đăng ký!" });
         }
 
         const pool = await poolPromise;
-        // ... (Các bước kiểm tra email và mã hóa password giữ nguyên) ...
+
+        // --- BƯỚC KIỂM TRA EMAIL TỒN TẠI ---
+        const checkEmail = await pool.request()
+            .input('email', sql.NVarChar, email)
+            .query('SELECT UserID FROM Users WHERE Email = @email');
+
+        if (checkEmail.recordset.length > 0) {
+            // Trả về mã lỗi 400 và thông báo cụ thể
+            return res.status(400).json({ message: "Email đã tồn tại trên hệ thống!" });
+        }
+        // ------------------------------------
+
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Lưu vào Database
         await pool.request()
             .input('user', sql.NVarChar, username)
             .input('pass', sql.NVarChar, hashedPassword)
             .input('name', sql.NVarChar, display_name)
             .input('email', sql.NVarChar, email)
-            .input('avatar', sql.NVarChar(sql.MAX), avatar) // Quan trọng nhất: NVARCHAR(MAX) cho ảnh
+            .input('avatar', sql.NVarChar(sql.MAX), avatar)
             .query(`INSERT INTO Users (Username, Password, DisplayName, Email, AvatarURL) 
                     VALUES (@user, @pass, @name, @email, @avatar)`);
 
@@ -41,38 +49,39 @@ const register = async (req, res) => {
 
 const login = async (req, res) => {
     try {
-        const { username, password } = req.body;
+        // Nhận thêm email từ body
+        const { username, password, email } = req.body; 
         const pool = await poolPromise;
 
+        // Tìm User thỏa mãn cả Username VÀ Email
         const result = await pool.request()
             .input('user', sql.NVarChar, username)
-            .query('SELECT UserID, Username, Password, DisplayName FROM Users WHERE Username = @user');
+            .input('email', sql.NVarChar, email)
+            .query('SELECT UserID, Username, Password, Email, DisplayName FROM Users WHERE Username = @user AND Email = @email');
 
         if (result.recordset.length > 0) {
             const user = result.recordset[0];
             const isMatch = await bcrypt.compare(password, user.Password);
 
             if (isMatch) {
-                delete user.Password; // Xóa pass trước khi gửi về
-
-                // 2. TẠO TOKEN KHI MẬT KHẨU ĐÚNG
+                delete user.Password;
                 const token = jwt.sign(
-                    { userId: user.UserID, username: user.Username }, // Thông tin gửi kèm trong vé
-                    process.env.JWT_SECRET, // Chữ ký bí mật lấy từ .env
-                    { expiresIn: '7d' } // Vé có hạn sử dụng 7 ngày
+                    { userId: user.UserID, username: user.Username },
+                    process.env.JWT_SECRET,
+                    { expiresIn: '7d' }
                 );
 
-                // 3. Trả về cả user và token
                 res.json({ 
                     message: "Đăng nhập thành công", 
                     user: user,
-                    token: token // Kèm theo vé thông hành
+                    token: token 
                 });
             } else {
                 res.status(401).json({ message: "Sai mật khẩu!" });
             }
         } else {
-            res.status(401).json({ message: "Tài khoản không tồn tại!" });
+            // Thông báo chung để bảo mật hoặc thông báo cụ thể tùy bạn
+            res.status(401).json({ message: "Tài khoản hoặc Email không chính xác!" });
         }
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -121,8 +130,21 @@ const handleRegister = async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ message: "Email là bắt buộc" });
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const pool = await poolPromise;
+
+        // --- 1. KIỂM TRA EMAIL ĐÃ TỒN TẠI TRONG BẢNG USERS CHƯA ---
+        const checkEmail = await pool.request()
+            .input('email', sql.NVarChar, email)
+            .query('SELECT UserID FROM Users WHERE Email = @email');
+
+        if (checkEmail.recordset.length > 0) {
+            // Nếu email đã tồn tại, dừng lại và báo lỗi luôn, KHÔNG tạo OTP
+            return res.status(400).json({ message: "Email này đã được đăng ký tài khoản!" });
+        }
+        // -----------------------------------------------------------
+
+        // 2. NẾU CHƯA TỒN TẠI THÌ TIẾP TỤC TẠO OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
         // Lưu OTP vào Database (Vô hiệu hóa các mã cũ của email này trước khi lưu mã mới)
         await pool.request()
@@ -133,7 +155,7 @@ const handleRegister = async (req, res) => {
                 INSERT INTO OtpCodes (Email, OtpCode) VALUES (@email, @otp)
             `);
 
-        // Gọi hàm gửi email đã viết trước đó
+        // Gọi hàm gửi email
         await sendEmailOTP(email, otp);
 
         res.status(200).json({ message: "OTP đã được gửi đến email của bạn!" });
@@ -142,7 +164,6 @@ const handleRegister = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
-
 const verifyOTP = async (req, res) => {
     try {
         const { email, otp } = req.body;
@@ -237,5 +258,43 @@ const resetPassword = async (req, res) => {
         res.status(500).json({ error: "Lỗi hệ thống: " + err.message });
     }
 };
-// Nhớ thêm getProfile và resetPassword vào module.exports ở cuối file
-module.exports = { register, login, sendEmailOTP, handleRegister, verifyOTP, getProfile, resetPassword };
+
+// API xử lý gửi OTP dành riêng cho việc Cập nhật Profile 
+const sendOtpUpdate = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ message: "Email là bắt buộc" });
+
+        const pool = await poolPromise;
+
+        // BƯỚC KHÁC BIỆT SO VỚI ĐĂNG KÝ: Email PHẢI tồn tại mới cho gửi OTP
+        const checkEmail = await pool.request()
+            .input('email', sql.NVarChar, email)
+            .query('SELECT UserID FROM Users WHERE Email = @email');
+
+        if (checkEmail.recordset.length === 0) {
+            return res.status(404).json({ message: "Không tìm thấy tài khoản với email này!" });
+        }
+
+        // Tạo OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Lưu OTP vào Database
+        await pool.request()
+            .input('email', sql.NVarChar, email)
+            .input('otp', sql.Char, otp)
+            .query(`
+                UPDATE OtpCodes SET IsUsed = 1 WHERE Email = @email;
+                INSERT INTO OtpCodes (Email, OtpCode) VALUES (@email, @otp)
+            `);
+
+        
+        await sendEmailOTP(email, otp);
+
+        res.status(200).json({ message: "OTP xác thực đã được gửi đến email của bạn!" });
+    } catch (error) {
+        console.error("Lỗi sendOtpUpdate:", error);
+        res.status(500).json({ error: error.message });
+    }
+};
+module.exports = { register, login, sendEmailOTP, handleRegister, verifyOTP, getProfile, resetPassword, sendOtpUpdate };

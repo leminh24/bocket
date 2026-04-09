@@ -56,10 +56,23 @@ const getMyFriends = async (req, res) => {
         const result = await pool.request()
             .input('userId', sql.Int, userId)
             .query(`
+                -- 1. Lấy chính tôi
+                SELECT UserID, DisplayName, AvatarURL 
+                FROM Users 
+                WHERE UserID = @userId
+
+                UNION ALL
+
+                -- 2. Lấy bạn bè (Lọc ID duy nhất trước khi JOIN)
                 SELECT u.UserID, u.DisplayName, u.AvatarURL 
                 FROM Users u
-                JOIN Friends f ON u.UserID = f.FriendID
-                WHERE f.UserID = @userId AND f.Status = 'Accepted'
+                WHERE u.UserID IN (
+                    -- Lấy FriendID khi tôi là người gửi
+                    SELECT FriendID FROM Friends WHERE UserID = @userId AND Status = 'Accepted'
+                    UNION
+                    -- Lấy UserID khi tôi là người nhận
+                    SELECT UserID FROM Friends WHERE FriendID = @userId AND Status = 'Accepted'
+                )
             `);
         res.json(result.recordset);
     } catch (err) {
