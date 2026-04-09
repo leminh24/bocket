@@ -84,6 +84,7 @@ const nodemailer = require('nodemailer');
 const sendEmailOTP = async (email, otp) => {
     // Ép kiểu email về string nếu lỡ truyền nhầm object, 
     // nhưng tốt nhất là sửa ở nơi gọi hàm (bước 2)
+    
     console.log("Đang gửi OTP đến địa chỉ:", email); 
 
     if (!email || typeof email !== 'string') {
@@ -116,6 +117,7 @@ const sendEmailOTP = async (email, otp) => {
 // Giả sử đây là hàm xử lý khi người dùng bấm gửi OTP
 const handleRegister = async (req, res) => {
     try {
+        console.log("Dữ liệu nhận được từ Android:", req.body);
         const { email } = req.body;
         if (!email) return res.status(400).json({ message: "Email là bắt buộc" });
 
@@ -182,7 +184,7 @@ const getProfile = async (req, res) => {
         const result = await pool.request()
             .input('id', sql.Int, userId)
             .query(`
-                SELECT UserID, Username, DisplayName, Email, AvatarURL 
+                SELECT UserID, Username, DisplayName, Email as email, AvatarURL 
                 FROM Users 
                 WHERE UserID = @id
             `);
