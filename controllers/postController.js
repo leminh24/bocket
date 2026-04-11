@@ -63,13 +63,12 @@ const createPost = async (req, res) => {
 
         const { content } = req.body;
         const userId = req.user.userId; 
-        
-        const imageUrl = `${req.protocol}://${req.get('host')}/${req.file.path.replace(/\\/g, '/')}`;
+        const imageUrl = req.file.path; // Cloudinary đã trả về link full rồi, không cần cộng thêm host local
 
         const pool = await poolPromise;
         await pool.request()
             .input('userId', sql.Int, userId)
-            .input('img', sql.NVarChar, imageUrl) // Lưu URL hoàn chỉnh vào DB
+            .input('img', sql.NVarChar, imageUrl) 
             .input('content', sql.NVarChar, content)
             .query('INSERT INTO Posts (UserID, ImageURL, Content, CreatedAt) VALUES (@userId, @img, @content, GETDATE())');
 
