@@ -139,6 +139,27 @@ const getSentRequests = async (req, res) => {
         res.json(result.recordset);
     } catch (err) { res.status(500).json({ error: err.message }); }
 };
+//hủy lời mời kết bạn đã gửi (chỉ có thể hủy khi đang ở trạng thái Pending)
+const cancelRequest = async (req, res) => {
+    try {
+        const { friendId } = req.body; // ID người mà mình đã gửi lời mời
+        const myId = req.user.userId;
+
+        const pool = await poolPromise;
+        await pool.request()
+            .input('myId', sql.Int, myId)
+            .input('fId', sql.Int, friendId)
+            .query(`
+                DELETE FROM Friends 
+                WHERE UserID = @myId AND FriendID = @fId AND Status = 'Pending'
+            `);
+
+        res.json({ message: "Đã hủy lời mời kết bạn" });
+    } catch (err) { 
+        res.status(500).json({ error: err.message }); 
+    }
+};
 
 
-module.exports = { sendFriendRequest, getMyFriends, getUserById, acceptFriend, getPendingRequests, getSentRequests };
+
+module.exports = { sendFriendRequest, getMyFriends, getUserById, acceptFriend, getPendingRequests, getSentRequests, cancelRequest };
