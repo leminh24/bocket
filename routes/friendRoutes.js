@@ -12,6 +12,7 @@ router.get('/sent', verifyToken, friendController.getSentRequests);
 router.get('/:id', verifyToken, friendController.getUserById); 
 
 router.post('/cancel', verifyToken, friendController.cancelRequest); 
+router.post('/unfriend', verifyToken, friendController.unfriendOrCancelRequest);
 
 // Các Route POST thường không bị tranh chấp nhưng nên để gọn gàng
 router.post('/request', verifyToken, friendController.sendFriendRequest);

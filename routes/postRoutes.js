@@ -12,6 +12,7 @@ router.get('/friends-feed', verifyToken, postController.getFriendPosts);
 
 // API Đăng bài: Kiểm tra Token trước -> Thu nhận ảnh 'image' -> Lưu vào DB
 router.post('/upload', verifyToken, upload.single('image'), postController.createPost);
+router.delete('/delete/:postId', verifyToken, postController.deletePost);
 
 // Lấy bài đăng của một người cụ thể (Trang cá nhân)
 // URL: GET /api/posts/user/:userId

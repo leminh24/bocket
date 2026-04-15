@@ -159,7 +159,29 @@ const cancelRequest = async (req, res) => {
         res.status(500).json({ error: err.message }); 
     }
 };
+// Hủy kết bạn  (dù đang ở trạng thái nào, chỉ cần có mối quan hệ là xóa hết)
+const unfriendOrCancelRequest = async (req, res) => {
+    try {
+        const { friendId } = req.body; 
+        const myId = req.user.userId;
+
+        const pool = await poolPromise;
+        await pool.request()
+            .input('myId', sql.Int, myId)
+            .input('fId', sql.Int, friendId)
+            .query(`
+                -- Xóa mọi mối quan hệ giữa 2 người này, bất kể ai gửi, 
+                -- bất kể trạng thái là 'Pending' hay 'Accepted'
+                DELETE FROM Friends 
+                WHERE (UserID = @myId AND FriendID = @fId) 
+                    OR (UserID = @fId AND FriendID = @myId)
+            `);
+
+        res.json({ message: "Đã hủy kết bạn thành công" });
+    } catch (err) { 
+        res.status(500).json({ error: err.message }); 
+    }
+};
 
 
-
-module.exports = { sendFriendRequest, getMyFriends, getUserById, acceptFriend, getPendingRequests, getSentRequests, cancelRequest };
+module.exports = { sendFriendRequest, getMyFriends, getUserById, acceptFriend, getPendingRequests, getSentRequests, cancelRequest, unfriendOrCancelRequest };

@@ -14,6 +14,7 @@ const getAllPosts = async (req, res) => {
             SELECT p.PostID, u.DisplayName, u.AvatarURL, p.ImageURL, p.Content, p.CreatedAt 
             FROM Posts p 
             JOIN Users u ON p.UserID = u.UserID
+            WHERE p.IsDeleted = 0
             ORDER BY p.CreatedAt DESC
             OFFSET @offset ROWS
             FETCH NEXT @limit ROWS ONLY
@@ -40,14 +41,14 @@ const getFriendPosts = async (req, res) => {
                     u.UserID
                 FROM Posts p
                 JOIN Users u ON p.UserID = u.UserID
-                WHERE p.UserID IN (
-                    -- Lấy ID những người mình đã gửi kết bạn và họ đã Accept
-                    SELECT FriendID FROM Friends WHERE UserID = @myId AND Status = 'Accepted'
-                    UNION
-                    -- Lấy ID những người gửi kết bạn cho mình và mình đã Accept
-                    SELECT UserID FROM Friends WHERE FriendID = @myId AND Status = 'Accepted'
-                ) 
-                OR p.UserID = @myId -- Bao gồm cả bài viết của chính mình
+                WHERE p.IsDeleted = 0 AND ( 
+                    p.UserID IN (
+                        SELECT FriendID FROM Friends WHERE UserID = @myId AND Status = 'Accepted'
+                        UNION
+                        SELECT UserID FROM Friends WHERE FriendID = @myId AND Status = 'Accepted'
+                    ) 
+                    OR p.UserID = @myId
+                )
                 ORDER BY p.CreatedAt DESC
             `);
         
@@ -94,10 +95,37 @@ const getPostsByUser = async (req, res) => {
                 p.CreatedAt
             FROM Posts p
             JOIN Users u ON p.UserID = u.UserID
-            WHERE p.UserID = @targetId
+            WHERE p.UserID = @targetId AND p.IsDeleted = 0
             ORDER BY p.CreatedAt DESC
         `);
     res.json({ data: result.recordset });
 };
+// 5. Xóa bài đăng (Cập nhật IsDeleted = 1)
+const deletePost = async (req, res) => {
+    try {
+        const { postId } = req.params; // Lấy ID bài post từ URL
+        const myId = req.user.userId;   // ID người dùng từ Token
 
-module.exports = { getAllPosts, getFriendPosts, createPost, getPostsByUser };
+        const pool = await poolPromise;
+        
+        // Thực hiện cập nhật IsDeleted = 1
+        const result = await pool.request()
+            .input('pId', sql.Int, postId)
+            .input('uId', sql.Int, myId)
+            .query(`
+                UPDATE Posts 
+                SET IsDeleted = 1 
+                WHERE PostID = @pId AND UserID = @uId
+            `);
+
+        // Kiểm tra xem có dòng nào bị ảnh hưởng không (tránh trường hợp xóa nhầm bài của người khác)
+        if (result.rowsAffected[0] === 0) {
+            return res.status(403).json({ message: "Không tìm thấy bài viết hoặc bạn không có quyền xóa bài này!" });
+        }
+
+        res.json({ message: "Xóa bài viết thành công!" });
+    } catch (err) {
+        res.status(500).json({ message: "Lỗi Server", error: err.message });
+    }
+};
+module.exports = { getAllPosts, getFriendPosts, createPost, getPostsByUser, deletePost };
